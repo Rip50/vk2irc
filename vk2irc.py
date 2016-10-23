@@ -10,6 +10,7 @@ import urllib2
 import time
 import sys
 import os
+from Queue import Queue
 import ConfigParser
 import logging
 from urllib2 import HTTPError, URLError
@@ -26,9 +27,27 @@ class IrcBot(irc.bot.SingleServerIRCBot):
         self.channel = channel
         self.deliver_to_irc = deliver_to_irc
         self.last_message_from = ""
+        self.messages = Queue()
+        self.update_thread = threading.Thread(target = self.update)
+        self.update_thread.daemon = True
+        self.update_thread.start()
+        
         logging.info("Initializing irc_bot, parameters: channel = %s, nickname = %s, server = %s, port = %s, deliver_to_irc = %s" % 
                      (channel, nickname, server, str(port), deliver_to_irc))
-
+                
+    def update(self) :
+        while(True) :
+            time.sleep(2)
+            if(self.messages.empty()) :
+                continue
+            message = ""
+            while(not self.messages.empty()) :
+                message+=self.messages.get()+"\r\n"
+            invoke_res = "";
+            invoke_res = vk_bot.invoke_vk('messages.send', {
+                'chat_id' : vk_bot.chat_id,
+                'message' : message})
+            
     def on_nicknameinuse(self, c, e):
         c.nick(c.get_nickname() + "_")
 
@@ -43,9 +62,8 @@ class IrcBot(irc.bot.SingleServerIRCBot):
                 self.last_message_from = e.source.nick
             else:
                 message = e.arguments[0].encode('utf-8')
-            vk_bot.invoke_vk('messages.send', {
-                'chat_id' : vk_bot.chat_id,
-                'message' : message})
+
+            self.messages.put(message)
 
     def send(self, msg):
         self.connection.privmsg(self.channel, msg)
@@ -61,21 +79,27 @@ class VkBot(threading.Thread):
         logging.info("Initializing vk_bot, parameters: access_token = *****, chat_id = %s, deliver_to_vk = %s" % (chat_id, deliver_to_vk))
 
     def invoke_vk(self, method, params=dict()):
-        #logging.info("invoke_vk. method=%s, params=%s", method, params)
-        time.sleep(0.4)
         url = 'https://api.vk.com/method/%s' % method
         constparams = {'v' : vk_api,
                        'access_token' : self.access_token}
-        data = urllib.urlencode(dict(constparams.items() + params.items()))
-        request = urllib2.Request(url, data)
-        response = urllib2.urlopen(request)
-        resJson = json.loads(response.read())
+        invoke_succeeded = False
+        attempt = 0
+        while attempt < 30 :
+            data = urllib.urlencode(dict(constparams.items() + params.items()))
+            request = urllib2.Request(url, data)
+            response = urllib2.urlopen(request)
+            resJson = json.loads(response.read())
 
-        if resJson.get('error') is not None:
+            if resJson.get('error') is None:
+                return resJson
+            
             logging.error("Response to VK returned error: %s", resJson['error']['error_msg'])
-            logging.info("result=%s", resJson);
-            return ""
-        return resJson
+            time_to_wait = 1
+            logging.info("result=%s, waiting %s seconds", resJson, time_to_wait);
+            time.sleep(time_to_wait)
+            attempt += 1
+        return ""
+            
 
     def clear_url(self, url):
         result = url
@@ -134,6 +158,7 @@ class VkBot(threading.Thread):
             if update[0] == 4 and (int(update[2]) & 0b10 == False):
                 details = self.get_message_details(update[1])
                 if details is None:
+                    logging.info("VkBot process_updates: empty message details")
                     return
                 user_id = details['user_id']
                 if self.is_app_user(user_id):
@@ -150,13 +175,15 @@ class VkBot(threading.Thread):
                         for line in textwrap.wrap(paragraph, 200):
                             if name_sent == False: line = "%s: %s" % (user_name, line) 
                             name_sent = True
-                            irc_bot.send("%s" % line)
+                            irc_bot.send(line)
                     if 'attachments' in details:
                         for attach in details['attachments']:
                             for key, value in attach.items():
                                 line = "[%s] %s" % (key, value) if name_sent else "%s: [%s] %s" % (user_name, key, value)
                                 name_sent = True
                                 irc_bot.send("%s" % line)
+                else :
+                    logging.info("VkBot process_updates: user %s not in user list"%user_id)
 
 
     def get_long_poll_server(self, ts):
@@ -190,11 +217,13 @@ class VkBot(threading.Thread):
                 jsonResponse = urllib2.urlopen(request)
                 response = json.loads(jsonResponse.read())
             except (HTTPError, URLError):
+                logging.error("Exception while sending request to server")
                 long_poll_server = None
                 self.users = None
                 continue
             
             if 'failed' in response:
+                logging.error("Server response returned \'failed\'")
                 long_poll_server = None
                 continue
 
@@ -204,14 +233,17 @@ class VkBot(threading.Thread):
                     if self.deliver_to_vk == True:
                         self.process_updates(response['updates'])
                 except (HTTPError, URLError):
+                    logging.error("Exception while processing updates")
                     long_poll_server = None
                     self.users = None
                     continue
                 try:
                     long_poll_server = self.get_long_poll_server(ts)
                 except (HTTPError, URLError):
+                    logging.error("Exception while getting long poll server")
                     long_poll_server = None
                     self.users = None
+                    continue
 
 def main():
     global irc_bot, vk_bot, vk_api, irc_echo_sym
