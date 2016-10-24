@@ -10,16 +10,21 @@ import urllib2
 import time
 import sys
 import os
-from Queue import Queue
-import ConfigParser
 import logging
-from urllib2 import HTTPError, URLError
 import HTMLParser
+from Queue import Queue
+from urllib2 import HTTPError, URLError
 
 irc_bot = None 
 vk_bot = None
 vk_api = "5.24"
 irc_echo_sym = '&'
+titleaudio = u'Пользователь отправил аудиозапись'
+titlevideo = u'Пользователь отправил видеозапись'
+titlephoto = u'Пользователь отправил фотографию'
+titleurl = u'Посмотреть по ссылке'
+reposturl = u'Пользователь отправил репост. Посмотреть по ссылке'
+#titleaudio = titleaudio.encode(unicode(str(titleaudio), 'cp1251'), 'utf8')
 
 class IrcBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, nickname, server, port=6667, server_pass = '', deliver_to_irc=True):
@@ -117,22 +122,23 @@ class VkBot(threading.Thread):
                 if attach['type'] == 'photo':
                     for size in (2560, 1280, 807, 604, 130, 75):
                         if "photo_%s" % size in attach['photo']:
-                            attachments.append({'url' : attach['photo']["photo_%s" % size]})
+                            attachments.append({titlephoto : attach['photo']["photo_%s" % size]})
                             break
                 if attach['type'] == 'audio':
-                    attachments.append({'title' : "%s - %s" % (attach['audio']['artist'], attach['audio']['title']),
-                                  'url' : self.clear_url(attach['audio']['url'])})
+                    attachments.append({titleaudio : "%s - %s" % (attach['audio']['artist'], attach['audio']['title'])
+                                  } )
+
                 if attach['type'] == 'wall':
-                    attachments.append({'url' : "https://vk.com/wall%s_%s" % (attach['wall']['to_id'], attach['wall']['id'])})
+                    attachments.append({reposturl : "https://vk.com/wall%s_%s" % (attach['wall']['to_id'], attach['wall']['id'])})
                 if attach['type'] == 'video':
                     video_id = "%s_%s" % (attach['video']['owner_id'], attach['video']['id'])
                     video_details = self.invoke_vk('video.get', {'videos' : video_id})
                     if video_details['response']['count'] > 0:
-                        attachments.append({'title' : video_details['response']['items'][0]['title']})
-                        attachments.append({'url' : video_details['response']['items'][0]['player']})
+                        attachments.append({titlevideo : video_details['response']['items'][0]['title']})
+                        attachments.append({titleurl : video_details['response']['items'][0]['player']})
         return {'user_id' : response['response']['items'][0]['user_id'],
                 'attachments' : attachments}
-
+                
     def get_user_names(self, user_ids):
         response = self.invoke_vk('users.get', {'user_ids' : ','.join(str(x) for x in user_ids), 'name_case' : 'Nom'}) #
         result = dict()
@@ -181,7 +187,7 @@ class VkBot(threading.Thread):
                             for key, value in attach.items():
                                 line = "[%s] %s" % (key, value) if name_sent else "%s: [%s] %s" % (user_name, key, value)
                                 name_sent = True
-                                irc_bot.send("%s" % line)
+                                irc_bot.send(line)
                 else :
                     logging.info("VkBot process_updates: user %s not in user list"%user_id)
 
@@ -247,20 +253,22 @@ class VkBot(threading.Thread):
 
 def main():
     global irc_bot, vk_bot, vk_api, irc_echo_sym
+    
+# данный фал всегда держать в кодировке 1251 (asci - кириллица)
+# секция IrcBot : название канала ; имя бота в ирк; название серванта; порт; пассворд сервера (пусто); включить* передачу сообщений из ИРК в ВК (0 либо 1)
+# секция VkBot : токен ; chat_id* ; включить* передачу из ВК в ИРК (0 либо 1);
+# * - все числа без кавычек.
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-    config = ConfigParser.SafeConfigParser()
-    config_location = "%s/.vk2irc" % os.environ['HOME'] if (len(sys.argv) == 1) else sys.argv[1]
-    logging.info("Loading config from %s", config_location)
-    config.read(config_location)
-    irc_bot = IrcBot("#%s" % config.get('irc_bot', 'channel'),
-                    config.get('irc_bot', 'nickname'),
-                    config.get('irc_bot', 'server'),
-                    config.getint('irc_bot', 'port'),
-                    config.get('irc_bot', 'serverpass'),
-                    config.getboolean('irc_bot', 'deliver_to_vk'))
-    vk_bot = VkBot(config.get('vk_bot', 'access_token'),
-                   config.get('vk_bot', 'chat_id'),
-                   config.getboolean('vk_bot', 'deliver_to_irc'))
+    irc_bot = IrcBot("Channel_Name",
+                    "Bot_Name",
+                    "Server_Name",
+                    6667,
+                    "Password",
+                    True)
+    vk_bot = VkBot("Token",
+                   1,
+                   True)
     vk_bot.daemon = True
     vk_bot.start()
     irc_bot.start()
