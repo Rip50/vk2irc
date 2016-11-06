@@ -12,6 +12,7 @@ import sys
 import os
 import logging
 import HTMLParser
+import ConfigParser
 from Queue import Queue
 from urllib2 import HTTPError, URLError
 
@@ -24,7 +25,22 @@ titlevideo = u'Пользователь отправил видеозапись'
 titlephoto = u'Пользователь отправил фотографию'
 titleurl = u'Посмотреть по ссылке'
 reposturl = u'Пользователь отправил репост. Посмотреть по ссылке'
-#titleaudio = titleaudio.encode(unicode(str(titleaudio), 'cp1251'), 'utf8')
+
+#Конфигурация по-умолчанию
+
+irc_config = { 'channel'       : '',   \
+               'nickname'      : '',   \
+               'server'        : '',   \
+               'port'          : 6667, \
+               'server_pass'   : '',     \
+               'deliver_to_vk' : True }
+
+vk_config = { 'access_token'   : '',   \
+              'chat_id'        : 35,     \
+              'deliver_to_irc' : True }
+
+time_to_wait = 1
+update_time = 2
 
 class IrcBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, nickname, server, port=6667, server_pass = '', deliver_to_irc=True):
@@ -41,8 +57,9 @@ class IrcBot(irc.bot.SingleServerIRCBot):
                      (channel, nickname, server, str(port), deliver_to_irc))
                 
     def update(self) :
+        global update_time
         while(True) :
-            time.sleep(2)
+            time.sleep(update_time)
             if(self.messages.empty()) :
                 continue
             message = ""
@@ -84,6 +101,7 @@ class VkBot(threading.Thread):
         logging.info("Initializing vk_bot, parameters: access_token = *****, chat_id = %s, deliver_to_vk = %s" % (chat_id, deliver_to_vk))
 
     def invoke_vk(self, method, params=dict()):
+        global time_to_wait
         url = 'https://api.vk.com/method/%s' % method
         constparams = {'v' : vk_api,
                        'access_token' : self.access_token}
@@ -99,8 +117,7 @@ class VkBot(threading.Thread):
                 return resJson
             
             logging.error("Response to VK returned error: %s", resJson['error']['error_msg'])
-            time_to_wait = 1
-            logging.info("result=%s, waiting %s seconds", resJson, time_to_wait);
+            logging.info("Waiting %s seconds", time_to_wait)
             time.sleep(time_to_wait)
             attempt += 1
         return ""
@@ -251,6 +268,32 @@ class VkBot(threading.Thread):
                     self.users = None
                     continue
 
+def load_configurations() :
+    global irc_config, vk_config
+    config = ConfigParser.SafeConfigParser()
+	
+    if (len(sys.argv) == 1) :
+        return
+		
+    config_location = "%s/.vk2irc" % sys.argv[1]
+    logging.info("Loading config from %s", config_location)
+    
+    config.read(config_location)
+    try:
+        irc_config['channel'] = "#%s" % config.get('irc_bot', 'channel')
+        irc_config['nickname'] =  config.get('irc_bot', 'nickname')
+        irc_config['server'] = config.get('irc_bot', 'server')
+        irc_config['port'] = config.getint('irc_bot', 'port')
+        irc_config['serverpass'] = config.get('irc_bot', 'serverpass')
+        irc_config['deliver_to_vk'] = config.getboolean('irc_bot', 'deliver_to_vk')
+        
+        vk_config['access_token'] = config.get('vk_bot', 'access_token')
+        vk_config['chat_id'] = config.get('vk_bot', 'chat_id')
+        vk_config['deliver_to_irc'] = config.getboolean('vk_bot', 'deliver_to_irc')
+    except Exception :
+        pass
+    
+    
 def main():
     global irc_bot, vk_bot, vk_api, irc_echo_sym
     
@@ -260,15 +303,19 @@ def main():
 # * - все числа без кавычек.
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-    irc_bot = IrcBot("Channel_Name",
-                    "Bot_Name",
-                    "Server_Name",
-                    6667,
-                    "Password",
-                    True)
-    vk_bot = VkBot("Token",
-                   1,
-                   True)
+    load_configurations()
+    
+    irc_bot = IrcBot(irc_config['channel'],
+                     irc_config['nickname'],
+                     irc_config['server'],
+                     irc_config['port'],
+                     irc_config['server_pass'],
+                     irc_config['deliver_to_vk'])
+    
+    vk_bot = VkBot(vk_config['access_token'],
+                   vk_config['chat_id'],
+                   vk_config['deliver_to_irc'])
+    
     vk_bot.daemon = True
     vk_bot.start()
     irc_bot.start()
