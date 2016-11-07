@@ -13,6 +13,7 @@ import os
 import logging
 import HTMLParser
 import ConfigParser
+import re
 from Queue import Queue
 from urllib2 import HTTPError, URLError
 
@@ -75,11 +76,14 @@ class IrcBot(irc.bot.SingleServerIRCBot):
 
     def on_welcome(self, c, e):
         c.join(self.channel)
-
+    
+    def filter(self, text):
+        return re.sub('(%s[0-9]{0,2},?[0-9]{0,2})|%s'%(chr(3),chr(15)), '', text)
+		
     def on_pubmsg(self, c, e):
         if self.deliver_to_irc == True and e.arguments[0][0] != irc_echo_sym:
             if vk_bot.is_last_message_vk == True or self.last_message_from != e.source.nick:
-                message = ("%s: %s" % (e.source.nick, e.arguments[0])).encode('utf-8')
+                message = ("%s: %s" % (self.filter(e.source.nick), self.filter(e.arguments[0]))).encode('utf-8')
                 vk_bot.is_last_message_vk = False
                 self.last_message_from = e.source.nick
             else:
@@ -160,7 +164,7 @@ class VkBot(threading.Thread):
         response = self.invoke_vk('users.get', {'user_ids' : ','.join(str(x) for x in user_ids), 'name_case' : 'Nom'}) #
         result = dict()
         for user in response['response']:
-            result[user['id']] = "%s %s" % (user['first_name'], user['last_name'])
+            result[user['id']] = "%s12%s %s%s" % (chr(3),user['first_name'], user['last_name'], chr(15))
         return result if len(result.items()) > 0 else None
 
     def load_users(self):
