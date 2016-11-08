@@ -113,8 +113,7 @@ class VkBot(threading.Thread):
         constparams = {'v' : vk_api,
                        'access_token' : self.access_token}
         invoke_succeeded = False
-        attempt = 0
-        while attempt < 30 :
+        while True :
             data = urllib.urlencode(dict(constparams.items() + params.items()))
             request = urllib2.Request(url, data)
             response = urllib2.urlopen(request)
@@ -126,7 +125,6 @@ class VkBot(threading.Thread):
             logging.error("Response to VK returned error: %s", resJson['error']['error_msg'])
             logging.info("Waiting %s seconds", time_to_wait)
             time.sleep(time_to_wait)
-            attempt += 1
         return ""
             
 
@@ -142,7 +140,7 @@ class VkBot(threading.Thread):
             return None
         attachments = list()
         if 'fwd_messages' in response['response']['items'][0]:
-            attachments.append(u'[Прикреплённые сообщения видимы только в беседе VK]')
+            attachments.append( { u'Прикреплённые сообщения видны только в беседе VK' : ''})
         if 'attachments' in response['response']['items'][0]:
             for attach in response['response']['items'][0]['attachments']:
                 if attach['type'] == 'photo':
@@ -176,7 +174,7 @@ class VkBot(threading.Thread):
         response = self.invoke_vk('users.get', {'user_ids' : ','.join(str(x) for x in user_ids), 'name_case' : 'Nom'}) #
         result = dict()
         for user in response['response']:
-            result[user['id']] = "%s12%s %s%s" % (chr(3),user['first_name'], user['last_name'], chr(15))
+            result[user['id']] = "%s10%s %s%s" % (chr(3),user['first_name'], user['last_name'], chr(15))
         return result if len(result.items()) > 0 else None
 
     def load_users(self):
@@ -291,7 +289,7 @@ def load_configurations() :
     if (len(sys.argv) == 1) :
         return
 		
-    config_location = "%s/.vk2irc" % sys.argv[1]
+    config_location = sys.argv[1]
     logging.info("Loading config from %s", config_location)
     
     config.read(config_location)
