@@ -26,6 +26,7 @@ titlevideo = u'Пользователь отправил видеозапись'
 titlephoto = u'Пользователь отправил фотографию'
 titleurl = u'Посмотреть по ссылке'
 reposturl = u'Пользователь отправил репост. Посмотреть по ссылке'
+titledoc = u'Пользователь отправил документ. Посмотреть по ссылке'
 
 #Конфигурация по-умолчанию
 
@@ -40,8 +41,10 @@ vk_config = { 'access_token'   : '',   \
               'chat_id'        : 35,     \
               'deliver_to_irc' : True }
 
-time_to_wait = 1
-update_time = 2
+#Время перепосылки запроса при неудаче, с
+time_to_wait = 5
+#Время обновления сообщений в беседе VK, отправленных из чата IRC, с
+update_time = 3
 
 class IrcBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, nickname, server, port=6667, server_pass = '', deliver_to_irc=True):
@@ -87,7 +90,7 @@ class IrcBot(irc.bot.SingleServerIRCBot):
                 vk_bot.is_last_message_vk = False
                 self.last_message_from = e.source.nick
             else:
-                message = e.arguments[0].encode('utf-8')
+                message = self.filter(e.arguments[0]).encode('utf-8')
 
             self.messages.put(message)
 
@@ -138,6 +141,8 @@ class VkBot(threading.Thread):
         if response['response']['count'] == 0:
             return None
         attachments = list()
+        if 'fwd_messages' in response['response']['items'][0]:
+            attachments.append(u'[Прикреплённые сообщения видимы только в беседе VK]')
         if 'attachments' in response['response']['items'][0]:
             for attach in response['response']['items'][0]['attachments']:
                 if attach['type'] == 'photo':
@@ -151,6 +156,13 @@ class VkBot(threading.Thread):
 
                 if attach['type'] == 'wall':
                     attachments.append({reposturl : "https://vk.com/wall%s_%s" % (attach['wall']['to_id'], attach['wall']['id'])})
+                    
+                if attach['type'] == 'link':
+                    attachments.append({titleurl : "%s: %s"%(attach['link']['title'],attach['link']['url'] )})
+                    
+                if attach['type'] == 'doc':
+                    attachments.append({titledoc : "%s: %s"%(attach['doc']['title'],attach['doc']['url'] )})
+                    
                 if attach['type'] == 'video':
                     video_id = "%s_%s" % (attach['video']['owner_id'], attach['video']['id'])
                     video_details = self.invoke_vk('video.get', {'videos' : video_id})
