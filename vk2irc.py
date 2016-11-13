@@ -46,10 +46,18 @@ time_to_wait = 5
 #Время обновления сообщений в беседе VK, отправленных из чата IRC, с
 update_time = 3
 
+#Последняя введённая капча
+last_captcha = None
+
 def format_irc_text(format, text) :
     return '%s%s%s%s'%(chr(3),format,text,chr(15))
-
-
+    
+def format_irc_error(text) :
+    return format_irc_text('4', 'Error : %s'%text)
+    
+def format_irc_req(text) : 
+    return format_irc_text('4', text)
+    
 class IrcBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, nickname, server, port=6667, server_pass = '', deliver_to_irc=True):
         irc.bot.SingleServerIRCBot.__init__(self, [(server, port, server_pass)], nickname, nickname)
@@ -83,18 +91,27 @@ class IrcBot(irc.bot.SingleServerIRCBot):
 
     def on_welcome(self, c, e):
         c.join(self.channel)
-    
+            
+    def try_get_captcha(self, text) : 
+        global last_captcha
+        e = re.search('(\s|^)([\w]{3,6}\s[\w]{3,6})|([\w]{3,6})(\s|$)', text)
+        
+        if e is not None:
+            last_captcha = e.group(0)
+        
     def filter(self, text):
         return re.sub('(%s[0-9]{0,2},?[0-9]{0,2})|%s'%(chr(3),chr(15)), '', text)
 		
     def on_pubmsg(self, c, e):
         if self.deliver_to_irc == True and e.arguments[0][0] != irc_echo_sym:
+            msg = self.filter(e.arguments[0]);
+            self.try_get_captcha(msg)
             if vk_bot.is_last_message_vk == True or self.last_message_from != e.source.nick:
-                message = ("%s: %s" % (self.filter(e.source.nick), self.filter(e.arguments[0]))).encode('utf-8')
+                message = ("%s: %s" % (self.filter(e.source.nick), msg)).encode('utf-8')
                 vk_bot.is_last_message_vk = False
                 self.last_message_from = e.source.nick
             else:
-                message = self.filter(e.arguments[0]).encode('utf-8')
+                message = msg.encode('utf-8')
 
             self.messages.put(message)
 
@@ -109,24 +126,48 @@ class VkBot(threading.Thread):
         self.deliver_to_vk = deliver_to_vk
         self.is_last_message_vk = True
         self.last_message_from = ""
+        self.last_error_code = 0
         logging.info("Initializing vk_bot, parameters: access_token = *****, chat_id = %s, deliver_to_vk = %s" % (chat_id, deliver_to_vk))
-
+    
+    def get_captcha(self, error) :
+        global last_captcha
+        sid = error['captcha_sid']
+        last_captcha = None
+        irc_bot.send(format_irc_req(u'Алярм! Я бедный робот, не могу разобрать, что написано в капче по ссылке:'))
+        irc_bot.send(error['captcha_img'])
+        irc_bot.send(format_irc_req(u'Напиши, что там, комрад'))
+        begin = time.clock()
+        while (last_captcha is None) and (time.clock() - begin < 600):
+            time.sleep(1)
+        if(last_captcha is None) :
+            return {}
+        logging.info(last_captcha)
+        cur_captcha = last_captcha
+        return {'captcha_sid' : sid,'captcha_key' : cur_captcha}
+        
     def invoke_vk(self, method, params=dict()):
         global time_to_wait
         url = 'https://api.vk.com/method/%s' % method
         constparams = {'v' : vk_api,
                        'access_token' : self.access_token}
         invoke_succeeded = False
+        captchaparams = {}
         while True :
-            data = urllib.urlencode(dict(constparams.items() + params.items()))
+            data = urllib.urlencode(dict(constparams.items() + params.items() + captchaparams.items()))
             request = urllib2.Request(url, data)
             response = urllib2.urlopen(request)
             resJson = json.loads(response.read())
 
             if resJson.get('error') is None:
                 return resJson
+            code = resJson['error']['error_code']
+            if self.last_error_code != code :
+                irc_bot.send(format_irc_error(resJson['error']['error_msg']))
+                logging.error("Response to VK returned error: %s", resJson['error']['error_msg'])
             
-            logging.error("Response to VK returned error: %s", resJson['error']['error_msg'])
+            if code == 14:
+                captchaparams = self.get_captcha(resJson['error'])
+
             logging.info("Waiting %s seconds", time_to_wait)
             time.sleep(time_to_wait)
         return ""
@@ -342,6 +383,8 @@ def main():
     vk_bot.daemon = True
     vk_bot.start()
     irc_bot.start()
+    
+
 
 if __name__ == "__main__":
     main()
