@@ -46,6 +46,10 @@ time_to_wait = 5
 #Время обновления сообщений в беседе VK, отправленных из чата IRC, с
 update_time = 3
 
+def format_irc_text(format, text) :
+    return '%s%s%s%s'%(chr(3),format,text,chr(15))
+
+
 class IrcBot(irc.bot.SingleServerIRCBot):
     def __init__(self, channel, nickname, server, port=6667, server_pass = '', deliver_to_irc=True):
         irc.bot.SingleServerIRCBot.__init__(self, [(server, port, server_pass)], nickname, nickname)
@@ -174,7 +178,7 @@ class VkBot(threading.Thread):
         response = self.invoke_vk('users.get', {'user_ids' : ','.join(str(x) for x in user_ids), 'name_case' : 'Nom'}) #
         result = dict()
         for user in response['response']:
-            result[user['id']] = "%s10%s %s%s" % (chr(3),user['first_name'], user['last_name'], chr(15))
+            result[user['id']] = format_irc_text('10','%s %s' % (user['first_name'], user['last_name']))
         return result if len(result.items()) > 0 else None
 
     def load_users(self):
@@ -294,7 +298,7 @@ def load_configurations() :
     
     config.read(config_location)
     try:
-        irc_config['channel'] = "#%s" % config.get('irc_bot', 'channel')
+        irc_config['channel'] = config.get('irc_bot', 'channel')
         irc_config['nickname'] =  config.get('irc_bot', 'nickname')
         irc_config['server'] = config.get('irc_bot', 'server')
         irc_config['port'] = config.getint('irc_bot', 'port')
@@ -307,6 +311,11 @@ def load_configurations() :
     except Exception :
         pass
     
+
+def format_channel(text) : 
+    if(text[0] is '#'):
+        return text
+    return '#%s'%text
     
 def main():
     global irc_bot, vk_bot, vk_api, irc_echo_sym
@@ -319,7 +328,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
     load_configurations()
     
-    irc_bot = IrcBot(irc_config['channel'],
+    irc_bot = IrcBot(format_channel(irc_config['channel']),
                      irc_config['nickname'],
                      irc_config['server'],
                      irc_config['port'],
