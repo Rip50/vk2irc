@@ -16,6 +16,7 @@ import ConfigParser
 import re
 from Queue import Queue
 from urllib2 import HTTPError, URLError
+from googleapiclient import discovery
 
 irc_bot = None 
 vk_bot = None
@@ -34,12 +35,15 @@ irc_config = { 'channel'       : '',   \
                'nickname'      : '',   \
                'server'        : '',   \
                'port'          : 6667, \
-               'server_pass'   : '',     \
+               'server_pass'   : '',   \
                'deliver_to_vk' : True }
 
 vk_config = { 'access_token'   : '',   \
-              'chat_id'        : 35,     \
+              'chat_id'        : 35,   \
               'deliver_to_irc' : True }
+
+#Ключ разработчика приложения google, необходим для формирования коротких ссылок              
+google_developer_key=''
 
 #Время перепосылки запроса при неудаче, с
 time_to_wait = 5
@@ -48,6 +52,19 @@ update_time = 3
 
 #Последняя введённая капча
 last_captcha = None
+
+def shorten_link(link):
+    global google_developer_key
+    try:
+        service = discovery.build('urlshortener', 'v1', developerKey=google_developer_key)
+        url = service.url()
+        body = {'longUrl': link }
+        resp = url.insert(body=body).execute()
+
+        short_url = resp['id']
+        return short_url
+    except Exception :
+        return link
 
 def format_irc_text(format, text) :
     return '%s%s%s%s'%(chr(3),format,text,chr(15))
@@ -91,6 +108,7 @@ class IrcBot(irc.bot.SingleServerIRCBot):
 
     def on_welcome(self, c, e):
         c.join(self.channel)
+        self.send(shorten_link('www.vk.com'))
             
     def try_get_captcha(self, text) : 
         global last_captcha
@@ -133,9 +151,9 @@ class VkBot(threading.Thread):
         global last_captcha
         sid = error['captcha_sid']
         last_captcha = None
-        irc_bot.send(format_irc_req(u'Алярм! Я бедный робот, не могу разобрать, что написано в капче по ссылке:'))
+        irc_bot.send(format_irc_req(u'Внимание! Беседа ВК не работает. Напишите в этот чат капчу, доступную по ссылке:'))
         irc_bot.send(error['captcha_img'])
-        irc_bot.send(format_irc_req(u'Напиши, что там, комрад'))
+        
         begin = time.clock()
         while (last_captcha is None) and (time.clock() - begin < 600):
             time.sleep(1)
@@ -191,7 +209,7 @@ class VkBot(threading.Thread):
                 if attach['type'] == 'photo':
                     for size in (2560, 1280, 807, 604, 130, 75):
                         if "photo_%s" % size in attach['photo']:
-                            attachments.append({titlephoto : attach['photo']["photo_%s" % size]})
+                            attachments.append({titlephoto : shorten_link(attach['photo']["photo_%s" % size])})
                             break
                 if attach['type'] == 'audio':
                     attachments.append({titleaudio : "%s - %s" % (attach['audio']['artist'], attach['audio']['title'])
@@ -201,10 +219,10 @@ class VkBot(threading.Thread):
                     attachments.append({reposturl : "https://vk.com/wall%s_%s" % (attach['wall']['to_id'], attach['wall']['id'])})
                     
                 if attach['type'] == 'link':
-                    attachments.append({titleurl : "%s: %s"%(attach['link']['title'],attach['link']['url'] )})
+                    attachments.append({titleurl : "%s: %s"%(attach['link']['title'],shorten_link(attach['link']['url']))})
                     
                 if attach['type'] == 'doc':
-                    attachments.append({titledoc : "%s: %s"%(attach['doc']['title'],attach['doc']['url'] )})
+                    attachments.append({titledoc : "%s: %s"%(attach['doc']['title'],shorten_link(attach['doc']['url']))})
                     
                 if attach['type'] == 'video':
                     video_id = "%s_%s" % (attach['video']['owner_id'], attach['video']['id'])
@@ -328,7 +346,7 @@ class VkBot(threading.Thread):
                     continue
 
 def load_configurations() :
-    global irc_config, vk_config
+    global irc_config, vk_config, google_developer_key
     config = ConfigParser.SafeConfigParser()
 	
     if (len(sys.argv) == 1) :
@@ -349,6 +367,8 @@ def load_configurations() :
         vk_config['access_token'] = config.get('vk_bot', 'access_token')
         vk_config['chat_id'] = config.get('vk_bot', 'chat_id')
         vk_config['deliver_to_irc'] = config.getboolean('vk_bot', 'deliver_to_irc')
+        
+        google_developer_key = config.get('common', 'google_developer_key')
     except Exception :
         pass
     
