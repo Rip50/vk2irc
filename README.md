@@ -14,7 +14,8 @@ Following types of attachements to VK chat messages are supported:
 Dependencies
 ------------
 - IRC client library 8.9.1 https://pypi.python.org/pypi/irc
-- VK API 5.24
+- Google API 1.5.5 https://pypi.python.org/pypi/google-api-python-client
+- VK API 5.60
 
 Getting started
 ---------------
@@ -60,6 +61,7 @@ vk2irc
 Зависимости
 -----------
 - клиенская библиотека IRC версии 8.9.1 https://pypi.python.org/pypi/irc
+- Google API 1.5.5 https://pypi.python.org/pypi/google-api-python-client
 - VK API 5.24
 
 Установка и запуск

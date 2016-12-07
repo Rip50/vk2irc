@@ -20,7 +20,7 @@ from googleapiclient import discovery
 
 irc_bot = None 
 vk_bot = None
-vk_api = "5.24"
+vk_api = "5.60"
 irc_echo_sym = '&'
 titleaudio = u'Пользователь отправил аудиозапись'
 titlevideo = u'Пользователь отправил видеозапись'
@@ -108,7 +108,6 @@ class IrcBot(irc.bot.SingleServerIRCBot):
 
     def on_welcome(self, c, e):
         c.join(self.channel)
-        self.send(shorten_link('www.vk.com'))
             
     def try_get_captcha(self, text) : 
         global last_captcha
@@ -118,7 +117,9 @@ class IrcBot(irc.bot.SingleServerIRCBot):
             last_captcha = e.group(0)
         
     def filter(self, text):
-        return re.sub('(%s[0-9]{0,2},?[0-9]{0,2})|%s'%(chr(3),chr(15)), '', text)
+        removed_format_symbols = re.sub('(%s[0-9]{0,2},?[0-9]{0,2})|%s'%(chr(3),chr(15)), '', text)
+        space_after_star = removed_format_symbols.replace('*','* ')
+        return  space_after_star
 		
     def on_pubmsg(self, c, e):
         if self.deliver_to_irc == True and e.arguments[0][0] != irc_echo_sym:
@@ -250,7 +251,12 @@ class VkBot(threading.Thread):
             if int(response['response']) == 1:
                 self.app_user_id = user_id
         return user_id == self.app_user_id
-
+    
+    def filter(self, text):
+        r = re.compile(r'\[[\w]+\|(.*?)\]')
+        wiki_format_removed = r.sub(r'\1',text)
+        return wiki_format_removed
+        
     def process_updates(self, updates):
         if len(updates) == 0:
             return
@@ -275,7 +281,7 @@ class VkBot(threading.Thread):
                         for line in textwrap.wrap(paragraph, 200):
                             if name_sent == False: line = "%s: %s" % (user_name, line) 
                             name_sent = True
-                            irc_bot.send(line)
+                            irc_bot.send(self.filter(line))
                     if 'attachments' in details:
                         for attach in details['attachments']:
                             for key, value in attach.items():
