@@ -22,12 +22,12 @@ irc_bot = None
 vk_bot = None
 vk_api = "5.60"
 irc_echo_sym = '&'
-titleaudio = u'Пользователь отправил аудиозапись'
-titlevideo = u'Пользователь отправил видеозапись'
-titlephoto = u'Пользователь отправил фотографию'
-titleurl = u'Посмотреть по ссылке'
-reposturl = u'Пользователь отправил репост. Посмотреть по ссылке'
-titledoc = u'Пользователь отправил документ. Посмотреть по ссылке'
+titleaudio = u'Аудиозапись'
+titlevideo = u'Bидеозапись'
+titlephoto = u'Фотография'
+titleurl = u'Cсылка'
+reposturl = u'Репост'
+titledoc = u'Документ'
 
 #Конфигурация по-умолчанию
 
